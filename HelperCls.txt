@@ -1,0 +1,163 @@
+You need to modify something retrun List<String> is not working.
+
+
+
+public class AccountTerritoryZipCodeHelper
+{ 
+    public static List<Account> newUpdatedAcc = new List<Account>();
+    public static List<Contact> contList = new List<Contact>();
+    public static List<Opportunity> oppList = new List<Opportunity>();
+    public static String zipCodeValue = '';
+    public static String ownerIds = '';
+    public static String actIds = '';
+    public static List<String> accOwnerIDS = new List<String>();
+    // Method for Updating Account...
+    public static /*List<String>*/ void changeAccountOwner(List<Account> accList, Map<Id, Account> oldMapAcc, Map<ID, Account> newMapAcc, boolean isInsert)
+    {
+        //  String actIds = '';
+        SET<String> zipCodeValueSet = new SET<String>();
+        SET<ID> accId = new SET<ID>();
+        SET<ID> territId = new SET<ID>();
+        try{
+            for(Account acc : accList)
+            {
+                accId.add(acc.Id);
+                territId.add(acc.Territory__c);
+                zipCodeValueSet.add(acc.BillingPostalCode);
+            }
+            
+            Map<String, Territory__c> mapOfZipWithTerritory = new Map<String,Territory__c>([SELECT Id, OwnerId, Name FROM Territory__c]);
+            System.debug('mapOfZipWithTerritory::'+mapOfZipWithTerritory);
+            MAP<String, Account> accMap = new MAP<String, Account>([Select id,Ownerid,Name,BillingPostalCode,Account.Territory__c,(Select id,OwnerId from Contacts),(SELECT ID,OwnerID,Stagename from Opportunities) from Account WHERE ID =:accId]);
+            System.debug('accMap:::'+accMap);
+            //This Map is used for updating Owner,Territory on ACCOUNT and Related Contacts and Opportunity.
+            Map<String, Territory__c> mapOfZipCode = new Map<String,Territory__c>();
+            for(Territory__c tertryValue : mapOfZipWithTerritory.values())
+            {
+                mapOfZipCode.put(mapOfZipWithTerritory.get(tertryValue.ID).Name, tertryValue);
+            }
+            
+            //it will store List<Territory> againest that set of territId.
+            List<Territory__c> tertOwnerId = [SELECT ID,OwnerId,Name from Territory__c WHERE Id =: territId];
+            System.debug('tertOwnerId:::'+tertOwnerId);
+            //this map is used for updating on Assignment History Previous and New  Owner from ACCOUNT.
+            Map<String,String> tertOwnerIDMap =new Map<String,String>();
+            for(Territory__c terRec : tertOwnerId)
+            {
+                tertOwnerIDMap.put(terRec.id, terRec.Name);
+            }
+            System.debug('tertOwnerIDMap>>>'+tertOwnerIDMap);
+            List<Territory__c> tertOwnerList = [SELECT ID,Name,OwnerId,(Select id,BillingPostalcode from Accounts__r) from Territory__c where name =: zipCodeValueSet];
+            System.debug('tertOwnerList>>>'+tertOwnerList);
+            
+            for(Account acc : accList){
+                if(!isInsert && (acc.BillingPostalCode != oldMapAcc.get(acc.id).BillingPostalCode)){
+                    if(mapOfZipCode.keySet().contains(acc.BillingPostalCode)){
+                        if(tertOwnerList.Size() == 2 || tertOwnerList.Size() == 3){
+                            ownerIds =  RoundRobinAssignmentHistroy.myUnitMethod(newMapAcc.Keyset(),tertOwnerList, 'Account');
+                            acc.OwnerId = ownerIds;
+                            if(acc.OwnerId != ownerIds){
+                                acc.AccFailureOnUpdate__c = true; 
+                                //    accOwnerIDS.add(ownerIds);
+                                //    System.debug('accOwnerIDS inside RoundRobin OwnerID>>>'+accOwnerIDS);
+                            } 
+                            //    actOwnerID = ownerIds;
+                            actIds = ownerIds;
+                            
+                            acc.Territory__c = mapOfZipCode.get(acc.BillingPostalCode).id;
+                            
+                            for(Account accMapValues : accMap.values()){
+                                for(Contact conRec : accMapValues.Contacts){
+                                    conRec.OwnerId = ownerIds;
+                                    
+                                    /*   if(acc.OwnerId != ownerIds){
+											conRec.ContFailureOnUpdate__c = true; 
+                                                } 
+                                                */ 
+                                    contList.add(conRec);
+                                } 
+                                for(Opportunity oppRec : accMapValues.Opportunities)
+                                {
+                                    
+                                    if(oppRec.StageName == 'Open')
+                                    {
+                                        /*       if(acc.OwnerId != ownerIds){
+oppRec.OppFailureOnUpdate__c = true; 
+} 
+*/    
+                                        oppRec.OwnerId = ownerIds;
+                                        oppList.add(oppRec);
+                                    }
+                                }
+                            }
+                            
+                        }
+                        else{
+                            acc.OwnerId = mapOfZipCode.get(acc.BillingPostalCode).OwnerId;
+                            acc.Territory__c = mapOfZipCode.get(acc.BillingPostalCode).id;
+                            actIds = mapOfZipCode.get(acc.BillingPostalCode).OwnerId;
+                            
+                            if(acc.OwnerId != mapOfZipCode.get(acc.BillingPostalCode).OwnerId){
+                                acc.AccFailureOnUpdate__c = true; 
+                                //   accOwnerIDS.add(mapOfZipCode.get(acc.BillingPostalCode).OwnerId);
+                                //   System.debug('accOwnerIDS inside If>>>'+accOwnerIDS);
+                            } 
+                            
+                            for(Account accMapValues : accMap.values()){
+                                for(Contact conRec : accMapValues.Contacts){
+                                    conRec.OwnerId = mapOfZipCode.get(acc.BillingPostalCode).OwnerId;
+                                    contList.add(conRec);
+                                } 
+                                for(Opportunity oppRec : accMapValues.Opportunities)
+                                {
+                                    if(oppRec.StageName == 'Open')
+                                    {
+                                        oppRec.OwnerId = mapOfZipCode.get(acc.BillingPostalCode).OwnerId;
+                                        oppList.add(oppRec);
+                                    }
+                                }
+                            }
+                            
+                        }  
+                    }
+                    Assignment_Histroy__c refAsignHis = new Assignment_Histroy__c();
+                    refAsignHis.Previous_Owner__c = oldMapAcc.get(acc.Id).OwnerID;
+                    refAsignHis.New_Owner__c = acc.OwnerId;
+                    refAsignHis.Previous_Territory__c =  oldMapAcc.get(acc.Id).Territory__c;	//tertOwnerIDMap.get(oldMapAcc.get(acc.Id).BillingPostalCode);
+                    refAsignHis.New_Territory__c =	acc.Territory__c;	// tertOwnerIDMap.get(acc.Territory__c);
+                    refAsignHis.Account__c = acc.Id;
+                    refAsignHis.Changed_By__c = acc.LastModifiedById;
+                    insert refAsignHis; 
+                    System.debug('refAsignHis>>>'+refAsignHis);
+                }
+                if(ownerIds == NUll)
+                    newUpdatedAcc.add(acc);
+            }
+            
+        }
+        
+        catch(Exception exe)
+        {
+            System.debug('Exception Message>>>>'+exe.getMessage());
+            System.debug('Exception Line Number >>>>'+exe.getLineNumber());
+            System.debug('exe stack'+exe.getStackTraceString());
+        } 
+        
+        if(contList.size() >0)
+        {
+            update  contList;
+        }
+        if(oppList.size() >0)
+        {
+            update oppList;
+        }
+        //  System.debug('accOwnerIDS>>>'+accOwnerIDS);
+        //  return accOwnerIDS;
+    }
+    
+    
+    /*   public static ID myUpdateOwnerOnFailureAcc( ){
+return  actIds;
+}
+*/
+}
