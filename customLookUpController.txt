@@ -1,0 +1,470 @@
+customLookUpController :::::::::::::
+
+
+/********************************************************
+ * Created by : Vijay Kumar H R
+ * Class Name : customLookUpController
+ * ******************************************************/
+public class customLookUpController {
+    public static list<Decimal> KPIOutputValues = new list<Decimal>();
+    public static list<Decimal> KPIOutputActualValues = new list<Decimal>();
+    public static Decimal csat = 0;
+    public static Decimal planned = 0;
+    public static Decimal totalHours = 0;
+    public static Decimal adhoc = 0;
+    public static Decimal scope = 0;
+    
+    public static Decimal actualCSAT = 0;
+    public static Decimal actualScope = 0;
+    public static Decimal actualProjectSchedule = 0;
+    public static Decimal actualTaskSchedule = 0;
+    public static Decimal actualQEfforts = 0;
+    public static Decimal actualCostOfQuality = 0;
+    public static Decimal actualBudget = 0;
+    public static Decimal actualGMargin = 0;
+    public static Decimal actualOnTimaInvoice = 0;
+    public static Decimal actualDocumentation = 0;        
+    public static list<aggregateResult> sobj= new list<aggregateResult>();
+    
+    public static Date projectPlannedEndDate;
+    public static Decimal finalScope = 0;
+    public static Decimal actualDays=0;
+    public static Decimal actualConsumedDays=0;
+    public static Decimal deviationDays =0;
+    public static Decimal deviationPercentage =0;
+    public static Decimal finalProjectSchedule=0;
+    public static Integer reqCount=0;
+    public static Integer testCaseReqCount = 0;
+    public static Decimal timeConsumedInBugTask=0;
+    public static Integer qEffort;
+    public static Decimal totalHoursConsumedABF=0;
+    public static Integer costOfQuality = 0;
+    public static Decimal budget = 0;
+    public static Decimal TotalDiffDays = 0;
+    public static Decimal totalActualDays = 0;
+    public static Decimal taskScheduleKPI =0;
+    public static Integer documents =0;
+    public static Integer kpiPoints = 0;
+    public static Integer numDays = 0;
+    public static Integer onTimeInvoicePoints=0;
+    public static Decimal gMargin=0;
+    public static Decimal actualCost =0;
+    public static Decimal serviceCost = 0;
+    public static Decimal gMarginPercentage = 0;
+    public static Decimal TotalBudgetedHours = 0;
+    public static Decimal TotalHoursConsumedinProject = 0;
+    public static Decimal temp; 
+    public static Map<Integer,String> monthMap =new Map<Integer,String>();
+   
+    public customLookUpController(){
+            monthMap.put(1,'Jan');
+            monthMap.put(2,'Feb');
+            monthMap.put(3,'Mar');
+            monthMap.put(4,'Apr');
+            monthMap.put(5,'May');
+            monthMap.put(6,'Jun');
+            monthMap.put(7,'Jul');
+            monthMap.put(8,'Aug');
+            monthMap.put(9,'Sep');
+            monthMap.put(10,'Oct');
+            monthMap.put(11,'Nov');
+            monthMap.put(12,'Dec');
+    }
+    public static Milestone1_Project__c proj = new Milestone1_Project__c();
+    @AuraEnabled
+    public static List < sObject > fetchLookUpValues(String searchKeyWord, String ObjectName) {
+        String searchKey = searchKeyWord + '%';
+        List <sObject> returnList = new List < sObject > ();
+        String sQuery = '';
+        sQuery =  'SELECT Id, Name FROM Milestone1_Project__c WHERE Name LIKE :searchKey ORDER BY CreatedDate DESC LIMIT 10'; //+ObjectName + ' WHERE Name LIKE :searchKey ORDER BY CreatedDate DESC LIMIT 5'; 
+        List < sObject > lstOfRecords = Database.query(sQuery);
+        for (sObject obj: lstOfRecords) {
+            returnList.add(obj);
+        }
+        return returnList;
+    }
+    @AuraEnabled
+    public static List<sObject> fetchUserQueueValues(String searchKeyWord) {
+        List<sObject> returnList = new List<sObject>();
+        String searchStr1 = '*' + searchKeyWord + '*';
+        String searchQuery = 'FIND \'' + searchStr1 + '\' IN ALL FIELDS RETURNING  User (Id,Name),Group(Id,Name where Type = \'Queue\') LIMIT 10';
+        List<List<sObject>> searchList = search.query(searchQuery);
+        for(User u : (List<User>)searchList[0]){
+            returnList.add(u);
+        }
+        for(Group gp : (List<Group>)searchList[1]){
+            returnList.add(gp);
+        }
+        return returnList;
+    }
+    
+    @AuraEnabled 
+    public static list<list<Decimal>> getCSATValues(String projectId){
+      
+        system.debug('Project ID is '+projectId);
+        sobj=[select AVG(Overall_Rating_Average__c) from Feedback1__c where project__r.id =: projectId and (RecordType.Name='Customer Monthly Feedback') and 
+              (Rate_us_of_Communication_Effectiveness__c!=null and Rate_us_on_Our_Team_Energy__c!=null and Rate_us_on_our_understanding_of_your_biz__c!=null and Rate_us_on_Quality_of_Work__c!=null
+               and Rate_us_on_the_Project_Progress__c!=null) group by project__r.id];
+        aggregateResult aggResult=(sobj.size() != 0)?sobj[0]:null;
+        system.debug('csat     ==='+aggResult);
+        temp = (aggResult!=null)?(Decimal)aggResult.get('expr0'):0;
+        system.debug('test csat '+temp);
+        csat=(temp!=0?((temp>=8.5)?150:((temp>=8 && temp<8.5)?112.5:((temp>=7.5 && temp<8)?45:0))):0);
+        system.debug('Csat Percentage '+csat);
+        actualCSAT=temp.setScale(2);        
+        system.debug('CSAT Calculations : \n Average CSAT Value : '+ temp +'CSAT Value : '+csat+'\n*****************************************************\n');
+        
+        //Scope Calculations
+        
+        list<Milestone1_Task__c> milestone =[select Project_Milestone__r.Project__r.Total_Budgeted_Hours__c from Milestone1_Task__c where  Project_Milestone__r.Project__c =: projectId and Project_Milestone__r.Project__c!=null];
+        totalHours =(milestone.size()>0)?milestone[0].Project_Milestone__r.Project__r.Total_Budgeted_Hours__c:0;
+        system.debug('Total Hours '+ totalHours); 
+        sobj=[select sum(Initial_Dev_Estimated_Hour__c),Project_Milestone__r.Project__c from Milestone1_Task__c where RecordType.Name = 'A-Planned' and
+              Project_Milestone__r.Project__c =: projectId and Project_Milestone__r.Project__c != null
+              group by Project_Milestone__r.Project__c];
+        //[select sum(Initial_Dev_Estimated_Hour__c) from Milestone1_Task__c where Project_Milestone__r.Project__c =: projectId and RecordType.Name='A-Planned' and Project_Milestone__r.Project__c = null];
+        
+        system.debug('Object : '+sobj);
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        system.debug('Test Data '+aggResult);
+        planned=(aggResult!=null)?aggResult.get('expr0')!=null?(Decimal)aggResult.get('expr0'):0:0;
+        sobj=[select sum(Initial_Dev_Estimated_Hour__c),Project_Milestone__r.Project__c from Milestone1_Task__c where RecordType.Name = 'B-Ad-Hoc' and
+              Project_Milestone__r.Project__c =: projectId and Project_Milestone__r.Project__c != null
+              group by Project_Milestone__r.Project__c];
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        adhoc=(aggResult!=null)?(aggResult.get('expr0')!=null)?(Decimal)aggResult.get('expr0'):0:0;
+        scope= (adhoc>0)? (planned>0)?(adhoc/planned)*100:0:100;      // ((adhoc!=0 && planned!=0)?(adhoc/planned)*100:100);
+        finalScope=(scope!=0)?(100-scope>=80)?100:(100-scope>=70)?70:(100-scope>=60)?40:0:0;
+        actualScope=100-scope.setScale(2);
+        system.debug('Scope Calculations : \n Total Planned Initial dev estimated hours : '+planned);
+        system.debug('Total Adhoc Initial dev estimated hours : '+adhoc);
+        system.debug('Scope Percentage : '+scope+'\n*************************************************************\n');
+        
+        //Project Schedule Calculations
+        
+        list< Milestone1_Project__c> projList = new list<Milestone1_Project__c>( [select Number_of_Project_Planned_Days__c,Actual_Project_Days__c,Deviation_of_Days__c,Actual_End_Date__c,Deadline__c from Milestone1_Project__c where id=:projectId and Number_of_Project_Planned_Days__c!=null]);
+        
+        system.debug('Project before assignment  : '+proj);
+        
+        proj=(projList.size()>0)?projList[0]:null;
+        system.debug('Project after assignment  : '+proj);
+        //proj = [select Deadline__c,Actual_End_Date__c,Number_of_Project_Planned_Days__c from Milestone1_Project__c where id=:projectId and Number_of_Project_Planned_Days__c!=null];
+        //system.debug('getting the Object  '+proj);
+        deviationDays = (proj!=null)?(proj.Actual_End_Date__c != null)?proj.Actual_End_Date__c.daysBetween(proj.Deadline__c):0:0;
+        system.debug((proj.Deadline__c+'   '+proj.Actual_End_Date__c));
+        projectPlannedEndDate = (proj!=null)?proj.Actual_End_Date__c:null;
+       system.debug(projectPlannedEndDate);
+        
+        actualDays= (proj!=null)?proj.Actual_Project_Days__c:0;
+        system.debug('Actual Days : '+actualDays);
+        actualConsumedDays = (proj!=null)?proj.Number_of_Project_Planned_Days__c:1;
+        system.debug('Actual Consumed Days : '+actualConsumedDays);
+        deviationPercentage = (proj!=null)?(proj.Number_of_Project_Planned_Days__c!=0)?deviationDays/proj.Number_of_Project_Planned_Days__c*100:0:0;
+        system.debug('Project  Deviation Percentage : '+deviationPercentage);
+        finalProjectSchedule = (deviationPercentage<=0)?100:(deviationPercentage<=20)?80:(deviationPercentage<=30)?70:(deviationPercentage>30)?0:0;
+        //system.debug('Project Schedule : '+finalProjectSchedule);     
+        actualProjectSchedule =100- deviationPercentage.setScale(2);
+        system.debug('Project Calculations\n Actual Days : '+actualDays+'\n Deviation Days : '+deviationDays+'Deviation Percentage : '+deviationPercentage+'\n finalProjectSchedule : '+finalProjectSchedule+'\n******************************************************\n');
+        
+        //Quality Effort Calculations
+        
+        sobj=[select count(Total_Hours_Consumed__c) from Milestone1_Task__c where 
+              Project_Milestone__r.Project__c=:projectId and (RecordType.Name='A-Planned' or RecordType.Name='B-Ad-Hoc' or RecordType.Name='F-Changed Request (CR)')];
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        reqCount=[select count() from Milestone1_Task__c where Project_Milestone__r.Project__c=:projectId and (RecordType.Name='A-Planned' or RecordType.Name='B-Ad-Hoc' or RecordType.Name='F-Changed Request (CR)') and
+                  Project_Milestone__r.Project__c!=null];
+        testCaseReqCount = [select count() from Milestone1_Task__c where Project_Milestone__r.Project__c=:projectId and RecordType.Name='C-Test Case' and Project_Milestone__r.Project__c != null];
+        actualQEfforts = ((Decimal)testCaseReqCount/((reqCount!=0)?reqCount:1)).setScale(2);
+        if((Decimal)testCaseReqCount/((reqCount!=0)?reqCount:1)*100>=150){ 
+            qEffort=50;
+        }
+        else if((Decimal)testCaseReqCount/((reqCount!=0)?reqCount:1)*100>=120){
+            qEffort=40;
+        }
+        else if((Decimal)testCaseReqCount/((reqCount!=0)?reqCount:1)*100>=110){
+            qEffort=20;
+        }
+        else{
+            qEffort=0;
+        }
+        System.debug('Quality Effort\n Total Requirement Count '+reqCount+'\n Test Case Count : ' +testCaseReqCount+'\nPercentage  : '+(Decimal)testCaseReqCount/((reqCount!=0)?reqCount:1)*100+'\nQuality Effort Points : '+qEffort+'\n********************************************************\n');
+        
+        //Cost of Quality calculations
+        
+        sobj=[select sum(Total_Hours_Consumed__c) from Milestone1_Task__c where Project_Milestone__r.Project__c=:projectId and (RecordType.Name='E-Bug (Defects)') and Project_Milestone__r.Project__c!= null];  
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        timeConsumedInBugTask=(aggResult!=null)?((Decimal)aggResult.get('expr0')!=null)?(Decimal)aggResult.get('expr0'):0:0;
+        sobj=[select sum(Total_Hours_Consumed__c) from Milestone1_Task__c where Project_Milestone__r.Project__c=:projectId and (RecordType.Name='A-Planned' or RecordType.Name='B-Ad-Hoc' or RecordType.Name='F-Changed Request (CR)') and 
+              Project_Milestone__r.Project__c!= null];
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        totalHoursConsumedABF = (aggResult!=null)?(Decimal)aggResult.get('expr0'):0;
+        //system.debug('Hours Spent on A-Planned Tasks : '+totalHoursConsumedABF +' Hours Spent on BugTask : '+timeConsumedInBugTask);
+        costOfQuality=(totalHoursConsumedABF!=null && totalHoursConsumedABF!=null && totalHoursConsumedABF!=0) ?(((timeConsumedInBugTask/totalHoursConsumedABF)*100)<=5)?100:(((timeConsumedInBugTask/totalHoursConsumedABF)*100)<=6)?80:(((timeConsumedInBugTask/totalHoursConsumedABF)*100)<=7)?40:0:0;
+        actualCostOfQuality = (totalHoursConsumedABF!=null &&totalHoursConsumedABF!=0)?((timeConsumedInBugTask/totalHoursConsumedABF)*100).setscale(2):0;
+        /*system.debug('ACTUAL COST OF QUALITY '+actualCostOfQuality);*/
+        system.debug('Cost Of Quality Calculations \n Total Hours Spent on Requirements : '+totalHoursConsumedABF+'\nTotal hours spent on bugTask '+timeConsumedInBugTask+'\n Percentage : '+actualCostOfQuality+'\n******************************************************\n');
+        
+        //Budget Calculation
+        
+        Milestone1_Project__c project=[select Budgeted_Hour_Usage__c,Total_Budgeted_Hours__c,Total_Hours_Consumed_In_Project__c from Milestone1_Project__c where Id=:projectId];
+        temp=(project!=null)?project.Budgeted_Hour_Usage__c:0;
+        TotalBudgetedHours=(project!=null)?project.Total_Budgeted_Hours__c:0;
+        TotalHoursConsumedinProject=(project!=null)?project.Total_Hours_Consumed_In_Project__c:0;
+        actualBudget = ((temp-100)<0)?0:temp-100;
+        budget = (temp!=0)?((temp<=104)?50:(temp>100&&temp<=108)?40:(temp>108 && temp<=110)?100*0.2:0):0;
+        system.debug('Budget Calculations \n Actual Budget : '+actualBudget+'\nBudget Points : '+temp+'\n********************************************************\n');
+        
+        //Task Schedule calculations
+        
+        list<Milestone1_Task__c> reqList = new list<Milestone1_Task__c>();
+        for(Milestone1_Task__c ml :[select Due_Date1__c,Initial_End_Date__c,Total_Delay_Percentage__c,Project1__c, Total_Actual_Days__c,Total_Planned_Days__c,RecordType.Name from Milestone1_Task__c where
+                                    (RecordType.Name='A-Planned' or RecordType.Name='Ad-Hoc Task' or RecordType.Name='B-Ad-Hoc' or RecordType.Name='Planned Task' or RecordType.Name='C-Test Case' or 
+                                     RecordType.Name='F-Changed Request (CR)' or RecordType.Name='Issue Log') and Project1__c!=null] ){
+                                         if((Id)ml.Project1__c == projectId){
+                                             reqList.add(ml);
+                                         }   
+                                     }
+        
+        for(Milestone1_Task__c mlStone :reqList){
+            TotalDiffDays+=((mlStone.Total_Planned_Days__c!=null)?mlStone.Total_Planned_Days__c:0) - ((mlStone.Total_Actual_Days__c!=null)?mlStone.Total_Actual_Days__c:1);//mlStone.Initial_End_Date__c.daysBetween(mlStone.Due_Date1__c);
+            totalActualDays+=(mlStone.Total_Actual_Days__c!=null)?mlStone.Total_Actual_Days__c:0;
+        }
+        
+        temp = (totalActualDays!=0)?TotalDiffDays/totalActualDays*100:0;
+        system.debug('Temp Value ; '+temp);
+        actualTaskSchedule = temp.setScale(2);
+        taskScheduleKPI = (temp<=0)?50:(temp<=20)?40:(temp<=30)?10*2:0;
+        system.debug('Task Schedule Calculations : \n Actual Days : '+totalActualDays+'\n Total Days Difference : '+TotalDiffDays+'\n**************************************************************'+actualTaskSchedule+'\n');
+        
+        // Contract and Document KPI Calculetions
+        
+        temp = [select count() from Contract__c where Project__c=:projectId];
+        actualDocumentation = temp;
+        documents = (temp>=10)?50:(temp>=8)?40:(temp>=5)?10*2:0;
+        system.debug('Contract and Documents Calculations\n Total Number of Documents Uploaded : '+actualDocumentation+'\n**************************************\n');
+        
+        //On Time Invoice KPI Calculation
+        
+        list<Payment_Schedule__c> pScheduleList = new list<Payment_Schedule__c>([select Sales_Invoice_Date__c,Invoice_date_F__c from Payment_Schedule__c where
+                                                                                 Project__c =: projectId and Project__c!=null ] );
+        
+        //system.debug('\n Payment schedule list : '+pScheduleList);
+        if(!pScheduleList.isEmpty()){
+            for(Payment_Schedule__c ps : pScheduleList){
+                //system.debug(ps);
+                Date dd;
+                if(ps.Invoice_date_F__c<=ps.Sales_Invoice_Date__c){
+                    kpiPoints+=50;
+                }
+                else if(ps.Invoice_date_F__c>ps.Sales_Invoice_Date__c){
+                    numDays=0;
+                    Date d=ps.Sales_Invoice_Date__c;
+                    integer actDays=ps.Sales_Invoice_Date__c.daysBetween(ps.Invoice_date_F__c);
+                    Integer psDays=0;
+                    for(integer i=1;i<=ps.Sales_Invoice_Date__c.daysBetween(ps.Invoice_date_F__c);i++){
+                        DateTime myDateTime = (DateTime) d.addDays(i);
+                        String dayOfWeek = myDateTime.format('E');
+                        //system.debug('mydatetime '+dayOfWeek);
+                        dd=ps.Sales_Invoice_Date__c;
+                        DateTime d1=(DateTime)dd;
+                        if(dayOfWeek.equals('Mon') || dayOfWeek.equals('Tue') || dayOfWeek.equals('Wed') || dayOfWeek.equals('Thu') || dayOfWeek.equals('Fri')){
+                            numDays++; 
+                        }
+                    }
+                    kpiPoints+=(numDays>10)?0:(numDays>6)?10*2:(numDays>0)?40:(numDays<=0)?50:0;
+                    actualOnTimaInvoice = numDays;
+                    system.debug('OnTime Invoice KPI Calculations :\n   days are more :'+numDays+'\nKPI Points :'+kpiPoints+'\n****************************************************************************************\n');
+                }
+            }
+        }
+        //system.debug('OnTimeInvoice Points= '+kpiPoints);
+        DateTime myDateTime = (DateTime) Date.newInstance(2019, 2, 12);
+        String dayOfWeek = myDateTime.format('E');
+        //system.debug('Day of the week '+dayOfWeek);
+        
+        // Gross Margin  Actual Service Total and Planned Service Rate
+        
+        sobj=[select sum(Actual_Rate__c),sum(Total_Services__c) from Line_Items__c where Project__c=:projectId group by Project__c];
+        system.debug('RLI Cost Details '+sobj   );
+        aggResult=(sobj.size() != 0)?sobj[0]:null;
+        actualCost = (aggResult!=null)?(Decimal)aggResult.get('expr0'):0;
+        serviceCost = (aggResult!=null)?(Decimal)aggResult.get('expr1'):0;
+        gMarginPercentage = (serviceCost!=0)?(actualCost==0)?100:((actualCost)/serviceCost)*100:0;
+        //system.debug('percentage : '+gMarginPercentage);
+        //system.debug(actualCost+'    '+serviceCost);
+        actualGMargin = 100-gMarginPercentage.setscale(2);
+        gMargin = (100-gMarginPercentage>50)?50:(100-gMarginPercentage>45)?40:(100-gMarginPercentage>35)?10*2:0;
+        system.debug('Gross Margin Calculations : \n Actual Cost : '+actualCost+'\nService Cost : '+serviceCost+'\nGrossMargin Percentage : '+gMarginPercentage+'\n************************************************************************\n');
+        
+        KPIOutputValues.add(csat);
+        KPIOutputValues.add(finalScope);
+        KPIOutputValues.add(finalProjectSchedule);
+        KPIOutputValues.add(taskScheduleKPI);
+        KPIOutputValues.add(qEffort);
+        KPIOutputValues.add(costOfQuality);
+        KPIOutputValues.add(budget);
+        KPIOutputValues.add(documents);
+        KPIOutputValues.add(kpiPoints);
+        KPIOutputValues.add(onTimeInvoicePoints);
+        KPIOutputValues.add(gMargin);
+        KPIOutputValues.add(planned);
+        KPIOutputValues.add(adhoc);
+        KPIOutputValues.add(totalHours);
+        KPIOutputValues.add(TotalBudgetedHours);
+        
+        KPIOutputActualValues.add(actualCSAT);
+        KPIOutputActualValues.add(actualScope);
+        KPIOutputActualValues.add(actualProjectSchedule);
+        KPIOutputActualValues.add(actualTaskSchedule);
+        KPIOutputActualValues.add(actualQEfforts);
+        KPIOutputActualValues.add(actualCostOfQuality);
+        KPIOutputActualValues.add(actualBudget);
+        KPIOutputActualValues.add(actualDocumentation);
+        KPIOutputActualValues.add(actualOnTimaInvoice);
+        KPIOutputActualValues.add(onTimeInvoicePoints);
+        KPIOutputActualValues.add(actualGMargin);
+        KPIOutputActualValues.add(planned);
+        KPIOutputActualValues.add(adhoc);
+        KPIOutputActualValues.add(totalHours);
+        list<list<Decimal>> kpiResults = new list<list<Decimal>>();
+        kpiResults.add(KPIOutputValues);
+        kpiResults.add(KPIOutputActualValues);
+        //kpiResults.add(getCSATData);
+        system.debug(kpiResults);
+        return kpiResults;
+    }
+    @AuraEnabled
+    //public static list<list<String>> getCalculatedData(){
+    public static map<String,list<String>> getCalculatedData(String projectId){
+        monthMap.put(1,'Jan');
+            monthMap.put(2,'Feb');
+            monthMap.put(3,'Mar');
+            monthMap.put(4,'Apr');
+            monthMap.put(5,'May');
+            monthMap.put(6,'Jun');
+            monthMap.put(7,'Jul');
+            monthMap.put(8,'Aug');
+            monthMap.put(9,'Sep');
+            monthMap.put(10,'Oct');
+            monthMap.put(11,'Nov');
+            monthMap.put(12,'Dec');
+        list<String> getCSATData =new list<String>();
+        getCSATData.add('Average CSAT Rating   : '+actualCSAT);
+        getCSATData.add('C-SAT KPI Points : '+csat);
+        
+        list<String> getScopeData = new list<String>();
+        system.debug(getCSATData);
+        getScopeData.add('Total Planned Task Hours : '+planned);
+        getScopeData.add('Total Adhoc Task Hours : '+adhoc);
+        getScopeData.add('Scope Percentage : '+actualScope+' %');
+        getScopeData.add('Scope KPI Points : '+finalScope);
+        system.debug(getScopeData);
+        Milestone1_Project__c proj = [SELECT Actual_End_Date__c,Deadline__c from Milestone1_Project__c where id =:projectId];
+        list<String> getProjectScheduleData = new list<String>();
+        system.debug('Actual End Date Of the Project is : '+proj);
+        Date d = (proj!=null)?(proj.Actual_End_Date__c != null)?proj.Actual_End_Date__c:proj.Deadline__c:null;
+        Date d1 = (proj!=null)?proj.Deadline__c: null;
+		
+            
+        getProjectScheduleData.add('Planned Project End Date : '+string.valueOf(d.day())+'-'+monthMap.get(d.month())+'-'+d.year());
+        getProjectScheduleData.add('Actual Project End Date : '+string.valueOf(d1.day())+'-'+monthMap.get(d1.month())+'-'+d1.year());
+        getProjectScheduleData.add('Project Deviation Percentage : '+((deviationPercentage<=0)?0:(100-deviationPercentage.setScale(2))));
+        //getProjectScheduleData.add('Planned Project Days : '+actualConsumedDays);
+        //getProjectScheduleData.add('Actual Project Days : '+actualDays) ;
+        getProjectScheduleData.add('Deviation Days  : '+((deviationDays<=0)?0:deviationDays));
+        getProjectScheduleData.add('Project Schedule KPI Points : '+finalProjectSchedule);
+        system.debug(getProjectScheduleData);
+        
+        list<String> getTaskScheduleData = new list<String>();
+        //getTaskScheduleData.add('Total Planned Days : '+totalActualDays);
+        //getTaskScheduleData.add('Actual Days Consumed : '+(totalActualDays+TotalDiffDays));
+        //getTaskScheduleData.add('Total Deviation Days : '+TotalDiffDays);
+        //getTaskScheduleData.add('Ratio between Task Start Date and Task Close Date : '+(actualTaskSchedule));
+        getTaskScheduleData.add('Task Schedule KPI Points : '+taskScheduleKPI);
+        system.debug(getTaskScheduleData);
+        
+        list<String> getQualityData = new list<String>();
+        getQualityData.add('Total number of Requirements : '+reqCount);
+        getQualityData.add('Total Number of Test Cases : '+testCaseReqCount);
+        getQualityData.add('Quality Effort KPI Points : '+qEffort);
+        system.debug(getQualityData);
+        
+        list<String> getCostofQualityData = new list<String>();
+        getCostofQualityData.add('Total Hours spent on Requirements : '+totalHoursConsumedABF);
+        getCostofQualityData.add('Total Hours spent on Bug Tasks : '+timeConsumedInBugTask);
+        getCostofQualityData.add('Cost of Quality KPI Points : '+costOfQuality);
+        system.debug(getCostofQualityData);
+        
+        list<String> getBudgetData = new list<String>();
+        getBudgetData.add('Total Budgeted Hours : '+TotalBudgetedHours);
+        getBudgetData.add('Total Hours Consumed in Project : '+TotalHoursConsumedinProject);
+        getBudgetData.add('Deviation of Hours in % : '+actualBudget);
+        getBudgetData.add('Budget KPI Points : '+budget);
+        system.debug(getBudgetData);
+        
+        list<String> getGrossMarginData = new list<String>();
+        getGrossMarginData.add('Actual Cost : '+actualCost);
+        getGrossMarginData.add('Servicce Cost : '+serviceCost);
+        getGrossMarginData.add('Gross Margin KPI Points : '+gMargin);
+        system.debug(getGrossMarginData);
+        
+        list<String> getOnTimeInvoiceData = new list<String>();
+        getOnTimeInvoiceData.add('Number of Days Delay : '+numDays);
+        getOnTimeInvoiceData.add('On Time Invoice KPI Points : '+onTimeInvoicePoints);
+        
+        list<String> getDocumentationData = new list<String>();
+        getDocumentationData.add('Number of Documents Uploaded : '+actualDocumentation);
+        getDocumentationData.add('Documentation KPI Points : '+documents);
+        
+        list<list<String>> returnkpiDetails = new list<list<String>>();
+        returnkpiDetails.add(getCSATData);
+        returnkpiDetails.add(getScopeData);
+        returnkpiDetails.add(getProjectScheduleData);
+        returnkpiDetails.add(getTaskScheduleData);
+        returnkpiDetails.add(getQualityData);
+        returnkpiDetails.add(getCostofQualityData);
+        returnkpiDetails.add(getBudgetData);
+        returnkpiDetails.add(getGrossMarginData);
+        
+        map<String,list<String>> mapReturnkpiDetails = new map<String,list<String>>();
+        mapReturnkpiDetails.put('CSAT', getCSATData);
+        mapReturnkpiDetails.put('Scope', getScopeData);
+        mapReturnkpiDetails.put('Project Schedule', getProjectScheduleData);
+        mapReturnkpiDetails.put('Task Schedule', getTaskScheduleData);
+        mapReturnkpiDetails.put('Quality Effort', getQualityData);
+        mapReturnkpiDetails.put('Cost of Quality', getCostofQualityData);
+        mapReturnkpiDetails.put('Budget', getBudgetData);
+        mapReturnkpiDetails.put('Gross Margin', getGrossMarginData);
+        mapReturnkpiDetails.put('On Time Invoice', getOnTimeInvoiceData);
+        mapReturnkpiDetails.put('Documentation', getDocumentationData);
+        System.debug('ParentList ' + returnkpiDetails);
+		System.debug('mapReturnkpiDetails>>>'+mapReturnkpiDetails);		
+        
+        return mapReturnkpiDetails;
+    }
+    
+    @AuraEnabled
+    public static Map<String,String> getHelpTexts(){
+        Map<String,String> helpTexts = new Map<String,String>();
+       Map<String,HelpTextForKpi__c> mcs = HelpTextForKpi__c.getall();
+       for(string s :mcs.keySet() ){
+       system.debug(s);
+           helpTexts.put(s,mcs.get(s).KPIHelpText__c);
+    } 
+        return helpTexts;
+    }
+    @AuraEnabled
+    public static Map<String,String> getTargets(){
+     	Map<String,String> targetMap = new Map<String,String>();
+        targetMap.put('planned',String.valueOf(planned*0.2)+' H');
+        system.debug(monthMap);
+        system.debug(projectPlannedEndDate);
+        targetMap.put('projectActualDate',string.valueOf(projectPlannedEndDate.day())+'-'+monthMap.get(projectPlannedEndDate.month())+'-'+projectPlannedEndDate.year());
+        targetMap.put('totalReqCount',String.valueOf(Math.ceil(reqCount*1.5))+' TC');
+        targetMap.put('costOfQuality',String.valueOf((totalHoursConsumedABF*0.05).setScale(2))+' H');
+        targetMap.put('grossMargin',String.valueOf((serviceCost*0.5).setScale(2))+' H');
+        targetMap.put('totalBudget',String.valueOf(TotalBudgetedHours)+' H');    
+        return targetMap;
+    }
+    
+}
