@@ -1,0 +1,108 @@
+DynamicKPIController:::
+
+
+public class DynamicKPIController {
+	
+    @AuraEnabled
+    public static List<String> objectNames(){
+        List<Schema.SObjectType> gd = Schema.getGlobalDescribe().Values();    
+        List<String> options = new List<String>();
+        for(SObjectType f : gd){
+            options.add(f.getDescribe().getName());
+            options.sort();        
+        }
+        System.debug('options--->>' + options);
+        return options;
+    }
+    
+    @AuraEnabled
+    public static List<String> objectFields(String selectedObject){
+        List<String> fields = new List<String>();
+        Map<String , Schema.SObjectType> globalDescription = Schema.getGlobalDescribe();
+        Schema.sObjectType objType = globalDescription.get(selectedObject); 
+        Schema.DescribeSObjectResult r1 = objType.getDescribe(); 
+        
+        Map<String , Schema.SObjectField> mapFieldList = r1.fields.getMap();  
+
+        for(Schema.SObjectField field : mapFieldList.values())  {  
+            Schema.DescribeFieldResult fieldResult = field.getDescribe();  
+            
+            if(fieldResult.isAccessible())  {  
+                fields.add(fieldResult.getName());
+            }  
+        }
+        List<String> so = new List<String>();
+        for(String fs : fields){
+            so.add(fs);
+            so.sort();
+        } 
+        System.debug('so---->>' + so);
+        return so;
+    }
+    @AuraEnabled
+    public static List<sObject> getQuery(string query){
+        List<sObject> sobjectList=new List<sObject>();
+        
+   system.debug('query-----'+query);
+      	sobjectList=database.query(query);
+        system.debug('sobjectList.size---'+sobjectList.size());
+        system.debug('sobjectList---'+sobjectList);
+       system.debug('this function is called-----------');
+        return sobjectList;
+    }
+   
+    @AuraEnabled
+    public static List<string>operatorlist(){
+        List<string>listopr=new List<string>();
+        for (Operators__c opt : Operators__c.getAll().values()){
+             listopr.add(opt.Name);
+           
+        }
+  		system.debug('listopr------>'+listopr);
+        return listopr;
+        
+    }
+    @AuraEnabled
+   public static List<string> relatedobjects(String selectedObject){
+        /*<string>relstedlist=New List<string>();
+        
+       List<Schema.SobjectField>relatedobject= Account.SobjectType.getDescribe().fields.getMap().Values();
+        for(Schema.SobjectField strFld: relatedobject){
+            if(strFld.getDescribe().getType() == Schema.DisplayType.REFERENCE){
+                relstedlist.add(strFld.getDescribe().getName());
+                system.debug('related objects======>>'+strFld.getDescribe().getReferenceTo());
+            }
+        }
+       system.debug('relstedlist::::'+relstedlist);
+
+       return  relstedlist;
+       
+    }*/
+            List<String> fields = new List<String>();
+        Map<String , Schema.SObjectType> globalDescription = Schema.getGlobalDescribe();
+        Schema.sObjectType objType = globalDescription.get(selectedObject); 
+        Schema.DescribeSObjectResult r1 = objType.getDescribe(); 
+        
+        Map<String , Schema.SObjectField> mapFieldList = r1.fields.getMap();  
+
+        for(Schema.SObjectField field : mapFieldList.values())  {  
+            Schema.DescribeFieldResult fieldResult = field.getDescribe();  
+            
+            if(fieldResult.isAccessible())  {  
+                fields.add(fieldResult.getName());
+            }  
+        }
+        List<String> so = new List<String>();
+        for(String fs : fields){
+            so.add(fs);
+            so.sort();
+        } 
+        System.debug('so---->>' + so);
+        return so;
+    }
+     @AuraEnabled
+    public static void getparentfields(Boolean istrue,sobject sobj){
+        
+    }
+
+}
